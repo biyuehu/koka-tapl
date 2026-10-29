@@ -3,8 +3,35 @@ type term
   Abs(x: string, t: term)
   App(a: term, b: term)
 
+type term'
+  Var'(x: string)
+  Abs'(x: string, t: term')
+  App'(a: term', b: term')
+
 effect no-rule-emit
   final ctl no-rule-emit(): a
+
+alias ctx = list<string>
+
+fun find-index(c: ctx, n: string, i: int): maybe<int>
+  match c
+    Nil -> Nothing
+    Cons(x, xs) -> if n == x then Just(i) else find-index(xs, n, i + 1)
+
+fun de-bruijn(c: ctx, t: term'): maybe<term>
+  match t
+    Var'(x) ->
+      match find-index(c, x, 0)
+        Just(i) -> Just(Var(x, i))
+        Nothing -> Nothing
+    Abs'(x, t) ->
+      match de-bruijn(Cons(x, c), t)
+        Just(t') -> Just(Abs(x, t'))
+        Nothing -> Nothing
+    App'(a, b) ->
+      match (de-bruijn(c, a), de-bruijn(c, b))
+        (Just(a'), Just(b')) -> Just(App(a', b'))
+        _ -> Nothing
 
 fun show(t: term): string
   match t
@@ -55,7 +82,7 @@ fun step(t: term): <no-rule-emit> term
   match t
     App(Abs(_, t'), v) | v.is-val -> term-subst-top'(v, t')
     App(v, t') | v.is-val -> App(v, t'.step)
-    App(t1, t2) -> App(t1.step, t2)
+    App(a, b) -> App(a.step, b)
     _ -> no-rule-emit()
 
 fun eval-small(t: term): <div> term
@@ -68,5 +95,5 @@ fun eval-big(t: term): <div> term
   match t
     App(Abs(_, t'), v) | v.is-val -> term-subst-top'(v, t').eval-big
     App(v, t') | v.is-val && !t'.is-val -> App(v, t'.eval-big).eval-big
-    App(t1, t2) | !t1.is-val -> App(t1.eval-big, t2).eval-big
+    App(a, b) | !a.is-val -> App(a.eval-big, b).eval-big
     _ -> t
